@@ -2,7 +2,7 @@
 
 **Author:** `ket4min-susan` / `memwm` (`memwmain@gmail.com`)  
 **Module:** `onchain-forensics/otc-taint-and-calldata-inspector`  
-**Live Telemetry Anchor:** `PAXG: $3900.0 | BTC: $78010.63 | ETH: $2269.6 | SOL: $95.68`  
+**Live Telemetry Anchor:** `PAXG: $3900.49 | XAUT: $3876.2 (Basis: +$24.29) | BTC: $77885.34 | ETH: $2265.92 | SOL: $95.41`  
 
 ## 1. Empirical Context
 
