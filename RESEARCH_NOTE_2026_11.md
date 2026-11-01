@@ -2,7 +2,7 @@
 
 **Author:** `ket4min-susan` / `memwm` (`memwmain@gmail.com`)  
 **Module:** `onchain-forensics/otc-taint-and-calldata-inspector`  
-**Live Telemetry Anchor:** `PAXG: $3902.3 | XAUT: $3876.2 (Basis: +$26.1) | BTC: $78025.01 | ETH: $2269.9 | SOL: $95.6`  
+**Live Telemetry Anchor:** `PAXG: $3899.18 | XAUT: $3874.4 (Basis: +$24.78) | BTC: $78019.48 | ETH: $2270.0 | SOL: $95.45`  
 
 ## 1. Empirical Context
 
@@ -38,4 +38,4 @@ Combined with Vietnam's Resolution `05/2025` and Decree `284/2026`, retail and i
 
 - **Why transfer residual `ERC4626` shares directly instead of queuing async withdrawal (`revert-finance/v4lend`):** Queuing an async withdrawal inside `afterRemoveLiquidity` traps user accounting inside the hook's internal share ledger and breaks atomic single-tx exit semantics. Clamping `redeemShares = min(vault.maxRedeem(address(this)), shares)` and transferring `shares - redeemShares` via `ERC20.transfer` delivers 100% of available underlying liquidity plus fungible vault shares for the illiquid tail at a warm `STATICCALL` cost of ~2,600 gas.
 - **Why bound `MAX_CBOR_NESTING_DEPTH = 32` (`tari-project/tari-ootle#3231`):** Enforced before `IndexedWellKnownTypes::from_value` traverses nested `tari_bor::Value` trees on WASM return values and template args so a malicious guest WASM call cannot exhaust host stack frames prior to metered allocation charging.
-- **Why reject conditional `map`/`slice`/`chan` moves across loop back-edges (`limitlessprojects/Go-Hybrid#2625/#2707`):** At the loop header join point, a conditional move on iteration `i` without definite re-initialization before the back-edge leaves the slot in a `MaybeMoved` state for iteration `i + 1`, violating the `O8` slot-loan invariant.
+- **Why reject conditional `map`/`slice`/`chan` moves across loop back-edges, pointer type aliases, and `BorrowHandle` / `A5` closure escapes (`limitlessprojects/Go-Hybrid#2625`, merged `#2707` `78a69f2`, `#2718`, `#2726`):** At the loop header join point, a conditional move on iteration `i` without definite re-initialization before the back-edge leaves the slot in a `MaybeMoved` state for iteration `i + 1`. Likewise, unwrapping pointer type aliases in `hy-emit` (`#2707`) and closing `BorrowHandle` escape windows (`#2718`) / `A5` foreign-escape closure captures (`#2726`) in `hy-check` prevents aliasing a loaned or consumed descriptor slot across call boundaries.
