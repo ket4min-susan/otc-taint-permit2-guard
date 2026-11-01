@@ -2,7 +2,7 @@
 
 **Author:** `ket4min-susan` / `memwm` (`memwmain@gmail.com`)  
 **Module:** `onchain-forensics/otc-taint-and-calldata-inspector`  
-**Live Telemetry Anchor:** `PAXG: $3900.49 | XAUT: $3876.2 (Basis: +$24.29) | BTC: $77885.34 | ETH: $2265.92 | SOL: $95.41`  
+**Live Telemetry Anchor:** `PAXG: $3900.97 | XAUT: $3876.2 (Basis: +$24.77) | BTC: $77893.11 | ETH: $2267.31 | SOL: $95.49`  
 
 ## 1. Empirical Context
 
@@ -33,3 +33,9 @@ Combined with Vietnam's Resolution `05/2025` and Decree `284/2026`, retail and i
 
 - **ERC4626 Utilization Asymmetry (`revert-finance/v4lend`):** Calling `IERC4626.redeem(shares)` unconditionally inside hook force-exit paths (`RevertHookAutoLendActions.sol`) reverts with `ERC4626ExceededMaxRedeem` whenever vault utilization leaves `maxRedeem(address(this)) < shares`, bricking exit flows and dropping popped `TickLinkedList` triggers. Always clamp `sharesToRedeem = min(vault.maxRedeem(address(this)), shares)` and transfer residual vault shares directly.
 - **Canonical Chain Continuity (`tari-project/tari`):** Base node state machines must verify canonical header continuity across both `sync_kernels` and `sync_utxos` prior to committing block diffs to prevent orphaned UTXO lock states.
+
+## 4. Maintainer & Auditor Q&A Notes (`ERC4626`, `Tari Ootle CBOR`, `Go-Hybrid O8`, `Permit2`)
+
+- **Why transfer residual `ERC4626` shares directly instead of queuing async withdrawal (`revert-finance/v4lend`):** Queuing an async withdrawal inside `afterRemoveLiquidity` traps user accounting inside the hook's internal share ledger and breaks atomic single-tx exit semantics. Clamping `redeemShares = min(vault.maxRedeem(address(this)), shares)` and transferring `shares - redeemShares` via `ERC20.transfer` delivers 100% of available underlying liquidity plus fungible vault shares for the illiquid tail at a warm `STATICCALL` cost of ~2,600 gas.
+- **Why bound `MAX_CBOR_NESTING_DEPTH = 32` (`tari-project/tari-ootle#3231`):** Enforced before `IndexedWellKnownTypes::from_value` traverses nested `tari_bor::Value` trees on WASM return values and template args so a malicious guest WASM call cannot exhaust host stack frames prior to metered allocation charging.
+- **Why reject conditional `map`/`slice`/`chan` moves across loop back-edges (`limitlessprojects/Go-Hybrid#2625/#2707`):** At the loop header join point, a conditional move on iteration `i` without definite re-initialization before the back-edge leaves the slot in a `MaybeMoved` state for iteration `i + 1`, violating the `O8` slot-loan invariant.
