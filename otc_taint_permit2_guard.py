@@ -14,9 +14,17 @@ Author: ket4min-susan / memwm (memwmain@gmail.com)
 """
 
 import json
+import socket
 import sys
 import urllib.request
 from datetime import datetime, timezone
+
+_orig_getaddrinfo = socket.getaddrinfo
+def _ipv4_preferred_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    res = _orig_getaddrinfo(host, port, family, type, proto, flags)
+    v4 = [r for r in res if r[0] == socket.AF_INET]
+    return v4 if v4 else res
+socket.getaddrinfo = _ipv4_preferred_getaddrinfo
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
