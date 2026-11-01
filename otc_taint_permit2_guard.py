@@ -20,10 +20,23 @@ import urllib.request
 from datetime import datetime, timezone
 
 _orig_getaddrinfo = socket.getaddrinfo
+_DNS_V4_CACHE: dict[str, str] = {
+    "eth.llamarpc.com": "172.67.74.152",
+    "mainnet.base.org": "104.18.36.41",
+}
 def _ipv4_preferred_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    res = _orig_getaddrinfo(host, port, family, type, proto, flags)
-    v4 = [r for r in res if r[0] == socket.AF_INET]
-    return v4 if v4 else res
+    try:
+        res = _orig_getaddrinfo(host, port, family, type, proto, flags)
+        v4 = [r for r in res if r[0] == socket.AF_INET]
+        if v4:
+            _DNS_V4_CACHE[str(host)] = v4[0][4][0]
+            return v4
+        return res
+    except socket.gaierror:
+        cached_ip = _DNS_V4_CACHE.get(str(host))
+        if cached_ip:
+            return _orig_getaddrinfo(cached_ip, port, socket.AF_INET, type, proto, flags)
+        raise
 socket.getaddrinfo = _ipv4_preferred_getaddrinfo
 
 if hasattr(sys.stdout, "reconfigure"):
