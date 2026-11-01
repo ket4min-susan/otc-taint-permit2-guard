@@ -2,7 +2,7 @@
 
 **Author:** `ket4min-susan` / `memwm` (`memwmain@gmail.com`)  
 **Module:** `onchain-forensics/otc-taint-and-calldata-inspector`  
-**Live Telemetry Anchor:** `PAXG: $3899.18 | XAUT: $3874.4 (Basis: +$24.78) | BTC: $78019.48 | ETH: $2270.0 | SOL: $95.45`  
+**Live Telemetry Anchor:** `PAXG: $3899.28 | XAUT: $3875.5 (Basis: +$23.78) | BTC: $78222.3 | ETH: $2274.29 | SOL: $95.84`  
 
 ## 1. Empirical Context
 
@@ -33,9 +33,10 @@ Combined with Vietnam's Resolution `05/2025` and Decree `284/2026`, retail and i
 
 - **ERC4626 Utilization Asymmetry (`revert-finance/v4lend`):** Calling `IERC4626.redeem(shares)` unconditionally inside hook force-exit paths (`RevertHookAutoLendActions.sol`) reverts with `ERC4626ExceededMaxRedeem` whenever vault utilization leaves `maxRedeem(address(this)) < shares`, bricking exit flows and dropping popped `TickLinkedList` triggers. Always clamp `sharesToRedeem = min(vault.maxRedeem(address(this)), shares)` and transfer residual vault shares directly.
 - **Canonical Chain Continuity (`tari-project/tari`):** Base node state machines must verify canonical header continuity across both `sync_kernels` and `sync_utxos` prior to committing block diffs to prevent orphaned UTXO lock states.
+- **FFI Aliasing UB, AEAD Key Auth & Host Sandbox Isolation (`tari-project/randomx-rs#86`, `tari_vault#1`, `tari-tapplet-lib#1`, `utxo-scanner#1`):** Eliminated overlapping mutable slice references across C FFI boundaries in `randomx-rs`, authenticated encryption key derivation prior to payload unsealing in `tari_vault`, enforced Lua host sandboxing in `tari-tapplet-lib`, and serialized `monitor-core` task-map reload transitions in `utxo-scanner`.
 
 ## 4. Maintainer & Auditor Q&A Notes (`ERC4626`, `Tari Ootle CBOR`, `Go-Hybrid O8`, `Permit2`)
 
 - **Why transfer residual `ERC4626` shares directly instead of queuing async withdrawal (`revert-finance/v4lend`):** Queuing an async withdrawal inside `afterRemoveLiquidity` traps user accounting inside the hook's internal share ledger and breaks atomic single-tx exit semantics. Clamping `redeemShares = min(vault.maxRedeem(address(this)), shares)` and transferring `shares - redeemShares` via `ERC20.transfer` delivers 100% of available underlying liquidity plus fungible vault shares for the illiquid tail at a warm `STATICCALL` cost of ~2,600 gas.
 - **Why bound `MAX_CBOR_NESTING_DEPTH = 32` (`tari-project/tari-ootle#3231`):** Enforced before `IndexedWellKnownTypes::from_value` traverses nested `tari_bor::Value` trees on WASM return values and template args so a malicious guest WASM call cannot exhaust host stack frames prior to metered allocation charging.
-- **Why reject conditional `map`/`slice`/`chan` moves across loop back-edges, pointer type aliases, and `BorrowHandle` / `A5` closure escapes (`limitlessprojects/Go-Hybrid#2625`, merged `#2707` `78a69f2`, `#2718`, `#2726`):** At the loop header join point, a conditional move on iteration `i` without definite re-initialization before the back-edge leaves the slot in a `MaybeMoved` state for iteration `i + 1`. Likewise, unwrapping pointer type aliases in `hy-emit` (`#2707`) and closing `BorrowHandle` escape windows (`#2718`) / `A5` foreign-escape closure captures (`#2726`) in `hy-check` prevents aliasing a loaned or consumed descriptor slot across call boundaries.
+- **Why reject conditional `map`/`slice`/`chan` moves across loop back-edges, pointer type aliases, and `BorrowHandle` / `A5` closure escapes (`limitlessprojects/Go-Hybrid#2625`, merged `#2707` `78a69f2`, merged `#2726`, merged `#2752`, `#2718`):** At the loop header join point, a conditional move on iteration `i` without definite re-initialization before the back-edge leaves the slot in a `MaybeMoved` state for iteration `i + 1`. Likewise, unwrapping pointer type aliases in `hy-emit` (`#2707`), closing `A5` foreign-escape closure captures (`#2726`) and `E11` `try_context` handlers (`#2752`), and enforcing `BorrowHandle` escape windows (`#2718`) in `hy-check` prevents aliasing a loaned or consumed descriptor slot across call boundaries.
