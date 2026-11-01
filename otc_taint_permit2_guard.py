@@ -95,13 +95,18 @@ def inspect_calldata_for_drainer(raw_calldata: str) -> dict:
     warning = DANGEROUS_SELECTORS.get(selector)
     if warning:
         # Decode ABI-specific spender slot:
-        # - Permit2.permit(address owner, PermitSingle((token,amount,exp,nonce), spender, sigDeadline), bytes sig):
-        #   static tuple places `token` at word 1 and `spender` at word 5 (fallback word 0 for short probes).
-        # - EIP-2612 permit(address owner, address spender, ...): `spender` at word 1 (fallback word 0).
+        # - Permit2.permit(address owner, PermitSingle((token,amount,exp,nonce), spender, sigDeadline), bytes sig) [0x2b67b570]:
+        #   PermitSingle is a static tuple encoded in-place -> `token` at word 1, `spender` at word 5.
+        # - Permit2.permit(address owner, PermitBatch(PermitDetails[], spender, sigDeadline), bytes sig) [0x30f28b7a]:
+        #   PermitBatch is a dynamic tuple (head pointer 0x60 at word 1) -> tuple head starts at word 3, `spender` at word 4.
+        # - EIP-2612 permit(address owner, address spender, ...) [0xd505accf]: `spender` at word 1.
         # - ERC20 approve / increaseAllowance / setApprovalForAll: `spender` at word 0.
         if selector == "0x2b67b570" and len(clean) >= 10 + 6 * 64:
             spender = _word_addr(clean, 5) or "unknown"
             token_addr = _word_addr(clean, 1)
+        elif selector == "0x30f28b7a" and len(clean) >= 10 + 5 * 64:
+            spender = _word_addr(clean, 4) or "unknown"
+            token_addr = None
         elif selector == "0xd505accf" and len(clean) >= 10 + 2 * 64:
             spender = _word_addr(clean, 1) or "unknown"
             token_addr = None
@@ -146,12 +151,26 @@ def run_selftest() -> dict:
     p2_res = inspect_calldata_for_drainer(permit2_full)
     assert p2_res["extracted_spender_or_target"] == "0xbadc0de0badc0de0badc0de0badc0de0badc0de0"
     assert p2_res.get("permit2_token") == "0xdac17f958d2ee523a2206206994597c13d831ec7"
+
+    # Full 5-word head Permit2.permit(owner, PermitBatch(details[], spender, sigDeadline), sig) vector
+    permit2_batch = (
+        "0x30f28b7a"
+        + "0000000000000000000000001111111111111111111111111111111111111111"  # word 0: owner
+        + "0000000000000000000000000000000000000000000000000000000000000060"  # word 1: offset to PermitBatch (0x60)
+        + "0000000000000000000000000000000000000000000000000000000000000140"  # word 2: offset to signature
+        + "0000000000000000000000000000000000000000000000000000000000000060"  # word 3: PermitBatch.details offset
+        + "000000000000000000000000feedfacefeedfacefeedfacefeedfacefeedface"  # word 4: PermitBatch.spender
+    )
+    p2_batch_res = inspect_calldata_for_drainer(permit2_batch)
+    assert p2_batch_res["extracted_spender_or_target"] == "0xfeedfacefeedfacefeedfacefeedfacefeedface"
+
     safe_res = inspect_calldata_for_drainer("0xa9059cbb0000000000000000000000001111111111111111111111111111111111111111")
     assert safe_res["safe"] is True
     return {
         "selftest": "PASSED",
         "selectors_verified": len(results),
         "permit2_abi_word5_spender_verified": True,
+        "permit2_batch_abi_word4_spender_verified": True,
         "safe_transfer_verified": True,
     }
 
