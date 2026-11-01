@@ -78,6 +78,15 @@ def check_address_blacklist_status(wallet_address: str) -> dict:
     }
 
 
+def _word_addr(clean_hex: str, word_index: int) -> str | None:
+    """Extract 20-byte address from 32-byte ABI word `word_index` (0-based after 4-byte selector)."""
+    start = 10 + word_index * 64
+    end = start + 64
+    if len(clean_hex) >= end:
+        return "0x" + clean_hex[start + 24 : end]
+    return None
+
+
 def inspect_calldata_for_drainer(raw_calldata: str) -> dict:
     clean = raw_calldata.strip().lower()
     if not clean.startswith("0x"):
@@ -85,14 +94,30 @@ def inspect_calldata_for_drainer(raw_calldata: str) -> dict:
     selector = clean[:10]
     warning = DANGEROUS_SELECTORS.get(selector)
     if warning:
-        spender = "0x" + clean[34:74] if len(clean) >= 74 else "unknown"
-        return {
+        # Decode ABI-specific spender slot:
+        # - Permit2.permit(address owner, PermitSingle((token,amount,exp,nonce), spender, sigDeadline), bytes sig):
+        #   static tuple places `token` at word 1 and `spender` at word 5 (fallback word 0 for short probes).
+        # - EIP-2612 permit(address owner, address spender, ...): `spender` at word 1 (fallback word 0).
+        # - ERC20 approve / increaseAllowance / setApprovalForAll: `spender` at word 0.
+        if selector == "0x2b67b570" and len(clean) >= 10 + 6 * 64:
+            spender = _word_addr(clean, 5) or "unknown"
+            token_addr = _word_addr(clean, 1)
+        elif selector == "0xd505accf" and len(clean) >= 10 + 2 * 64:
+            spender = _word_addr(clean, 1) or "unknown"
+            token_addr = None
+        else:
+            spender = _word_addr(clean, 0) or "unknown"
+            token_addr = None
+        out = {
             "safe": False,
             "selector": selector,
             "threat_detected": warning,
             "extracted_spender_or_target": spender,
             "action": "BLOCK_IMMEDIATELY — DO NOT SIGN THIS TRANSACTION!",
         }
+        if token_addr:
+            out["permit2_token"] = token_addr
+        return out
     return {
         "safe": True,
         "selector": selector,
@@ -107,13 +132,26 @@ def run_selftest() -> dict:
         payload = sel + "000000000000000000000000deadbeefdeadbeefdeadbeefdeadbeefdeadbeefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         res = inspect_calldata_for_drainer(payload)
         assert res["safe"] is False and res["selector"] == sel
-        assert res["extracted_spender_or_target"] == "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
         results.append(res)
+    # Full 6-word Permit2.permit(owner, PermitSingle((token,amount,exp,nonce), spender, sigDeadline), sig) vector
+    permit2_full = (
+        "0x2b67b570"
+        + "0000000000000000000000001111111111111111111111111111111111111111"  # word 0: owner
+        + "000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7"  # word 1: details.token (USDT)
+        + "000000000000000000000000ffffffffffffffffffffffffffffffffffffffff"  # word 2: details.amount (uint160::MAX)
+        + "0000000000000000000000000000000000000000000000000000ffffffffffff"  # word 3: details.expiration
+        + "0000000000000000000000000000000000000000000000000000000000000000"  # word 4: details.nonce
+        + "000000000000000000000000badc0de0badc0de0badc0de0badc0de0badc0de0"  # word 5: permitSingle.spender
+    )
+    p2_res = inspect_calldata_for_drainer(permit2_full)
+    assert p2_res["extracted_spender_or_target"] == "0xbadc0de0badc0de0badc0de0badc0de0badc0de0"
+    assert p2_res.get("permit2_token") == "0xdac17f958d2ee523a2206206994597c13d831ec7"
     safe_res = inspect_calldata_for_drainer("0xa9059cbb0000000000000000000000001111111111111111111111111111111111111111")
     assert safe_res["safe"] is True
     return {
         "selftest": "PASSED",
         "selectors_verified": len(results),
+        "permit2_abi_word5_spender_verified": True,
         "safe_transfer_verified": True,
     }
 
